@@ -2,7 +2,7 @@ namespace Inventory.Core.Domain.Entities;
 
 public class StockItem
 {
-    public Guid ProductId { get; set; }
+    public string ProductId { get; set; }=null!;
     public int QuantityOnHand { get; set; }
     public int ReservedQuantity { get; set; }
     public int Version { get; set; }

@@ -6,7 +6,7 @@ public class StockReservation
 {
     public Guid ReservationId { get; set; }
     public Guid OrderId { get; set; }
-    public Guid ProductId { get; set; }
+    public string ProductId { get; set; }=null!;
     public int Quantity { get; set; }
     public ReservationStatus Status { get; set; } = ReservationStatus.Reserved;
     public DateTimeOffset ReservedAt { get; set; }

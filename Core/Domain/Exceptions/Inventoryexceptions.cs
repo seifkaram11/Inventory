@@ -11,7 +11,7 @@ public class StockReservationNotFoundException(Guid reservationId)
 public class OrderNotFoundException(Guid orderId)
     : NotFoundException($"Order '{orderId}' was not found.");
 
-public class OrderItemNotFoundException(Guid orderId, Guid productId)
+public class OrderItemNotFoundException(Guid orderId, string productId)
     : NotFoundException($"Order '{orderId}' has no item for product '{productId}'.");
 
 public class InvalidReservationStateException(Guid reservationId, ReservationStatus status)

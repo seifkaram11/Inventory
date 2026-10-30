@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Inventory.Core.Application.RepositoryContrast;
 using Inventory.Core.Domain.Entities;
 using Inventory.Core.Domain.Enums;
@@ -11,19 +12,19 @@ public class StockRepository : IStockRepository
 {
     private readonly InventoryDBContext _inventoryDBContext;
 
-    public StockRepository(InventoryDBContext inventoryDBContext)
+    public StockRepository(InventoryDBContext inventoryDBContext, CancellationToken ct = default)
     {
         _inventoryDBContext = inventoryDBContext;
     }
 
-    public async Task<Order?> GetOrderAsync(Guid orderId)
+    public async Task<Order?> GetOrderAsync(Guid orderId, CancellationToken ct = default)
     {
         return await _inventoryDBContext.orders
             .AsNoTracking()
             .FirstOrDefaultAsync(o => o.OrderId == orderId);
     }
 
-    public async Task<IEnumerable<OrderItem>> GetOrderItemsAsync(Guid orderId)
+    public async Task<IEnumerable<OrderItem>> GetOrderItemsAsync(Guid orderId, CancellationToken ct = default)
     {
         return await _inventoryDBContext.orderItems
             .AsNoTracking()
@@ -31,7 +32,7 @@ public class StockRepository : IStockRepository
             .ToListAsync();
     }
 
-    public async Task<IEnumerable<StockReservation>> GetOrderReservationsAsync(Guid orderId)
+    public async Task<IEnumerable<StockReservation>> GetOrderReservationsAsync(Guid orderId, CancellationToken ct = default)
     {
         return await _inventoryDBContext.stockReservations
             .AsNoTracking()
@@ -40,35 +41,16 @@ public class StockRepository : IStockRepository
             .ToListAsync();
     }
 
-    public async Task<StockReservation?> GetReservationAsync(Guid reservationId)
+    public async Task<StockReservation?> GetReservationAsync(Guid reservationId, CancellationToken ct = default)
     {
         return await _inventoryDBContext.stockReservations
             .AsNoTracking()
             .FirstOrDefaultAsync(r => r.ReservationId == reservationId);
     }
 
-    public async Task<IEnumerable<StockReservation>> GetReservationsAsync(Guid inventoryId)
+    public async Task<bool> ReleaseReservationAsync(StockReservation reservation, CancellationToken ct = default)
     {
-        return await _inventoryDBContext.stockReservations
-            .AsNoTracking()
-            .OrderByDescending(r => r.ReservedAt)
-            .ToListAsync();
-    }
-
-    public async Task<IEnumerable<StockItem>> GetStockItemsAsync(Guid inventoryId)
-    {
-        return await _inventoryDBContext.stockItems
-            .AsNoTracking()
-            .OrderBy(s => s.ProductId)
-            .ToListAsync();
-    }
-
-    public async Task<bool> ReleaseReservationAsync(Guid reservationId)
-    {
-        var reservation = await _inventoryDBContext.stockReservations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.ReservationId == reservationId)
-            ?? throw new StockReservationNotFoundException(reservationId);
+        var reservationId = reservation.ReservationId;
 
         if (reservation.Status == ReservationStatus.Released) return true;
 
@@ -123,24 +105,24 @@ public class StockRepository : IStockRepository
         return true;
     }
 
-    public async Task<bool> ReserveStockAsync(Guid orderId, Guid inventoryId, Guid productId, long quantity)
+    public async Task<bool> ReserveStockAsync(Guid orderId, string productId, long quantity, CancellationToken ct = default)
     {
         if (quantity <= 0 || quantity > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(quantity));
 
         var qty = (int)quantity;
 
-        await using var trx = await _inventoryDBContext.Database.BeginTransactionAsync();
+        // await using var trx = await _inventoryDBContext.Database.BeginTransactionAsync();
         var now = DateTimeOffset.UtcNow;
 
-        await _inventoryDBContext.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT 1 FROM orders WHERE order_id = {orderId} FOR UPDATE");
+        // await _inventoryDBContext.Database.ExecuteSqlInterpolatedAsync(
+            // $"SELECT 1 FROM orders WHERE order_id = {orderId} FOR UPDATE", ct);
 
         var orderStatus = await _inventoryDBContext.orders
             .AsNoTracking()
             .Where(o => o.OrderId == orderId)
             .Select(o => (OrderStatus?)o.Status)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(ct);
 
         if (orderStatus is null)
             throw new OrderNotFoundException(orderId);
@@ -152,14 +134,14 @@ public class StockRepository : IStockRepository
             .AsNoTracking()
             .Where(r => r.OrderId == orderId && r.ProductId == productId)
             .Select(r => (ReservationStatus?)r.Status)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(ct);
 
         if (existing is not null)
             return existing == ReservationStatus.Reserved;
 
         var itemExists = await _inventoryDBContext.orderItems
             .AsNoTracking()
-            .AnyAsync(i => i.OrderId == orderId && i.ProductId == productId);
+            .AnyAsync(i => i.OrderId == orderId && i.ProductId == productId, ct);
 
         if (!itemExists)
             throw new OrderItemNotFoundException(orderId, productId);
@@ -170,7 +152,7 @@ public class StockRepository : IStockRepository
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.ReservedQuantity, x => x.ReservedQuantity + qty)
                 .SetProperty(x => x.Version, x => x.Version + 1)
-                .SetProperty(x => x.UpdatedAt, now));
+                .SetProperty(x => x.UpdatedAt, now), ct);
 
         if (numOfRow == 0) return false;
 
@@ -185,16 +167,16 @@ public class StockRepository : IStockRepository
             UpdatedAt = now
         });
 
-        await _inventoryDBContext.SaveChangesAsync();
+        await _inventoryDBContext.SaveChangesAsync(ct);
 
         var itemsCount = await _inventoryDBContext.orderItems
             .AsNoTracking()
-            .CountAsync(i => i.OrderId == orderId);
+            .CountAsync(i => i.OrderId == orderId, ct);
 
         var reservedCount = await _inventoryDBContext.stockReservations
             .AsNoTracking()
             .CountAsync(r => r.OrderId == orderId
-                          && r.Status == ReservationStatus.Reserved);
+                          && r.Status == ReservationStatus.Reserved, ct);
 
         if (itemsCount == reservedCount)
         {
@@ -202,19 +184,16 @@ public class StockRepository : IStockRepository
                 .Where(o => o.OrderId == orderId)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(o => o.Status, OrderStatus.Reserved)
-                    .SetProperty(o => o.UpdatedAt, now));
+                    .SetProperty(o => o.UpdatedAt, now), ct);
         }
 
-        await trx.CommitAsync();
+        // await trx.CommitAsync();
         return true;
     }
 
-    public async Task CancelReservationAsync(Guid reservationId, CancellationToken ct = default)
+    public async Task CancelReservationAsync(StockReservation reservation, CancellationToken ct = default)
     {
-        var reservation = await _inventoryDBContext.stockReservations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.ReservationId == reservationId, ct)
-            ?? throw new StockReservationNotFoundException(reservationId);
+        var reservationId = reservation!.ReservationId;
 
         if (reservation.Status == ReservationStatus.Cancelled) return;
 
@@ -328,21 +307,65 @@ public class StockRepository : IStockRepository
         return true;
     }
 
+    public async Task<IEnumerable<StockItem>> GetStockItemsAsync(string productId, CancellationToken ct = default)
+    {
+        return await _inventoryDBContext.stockItems.AsNoTracking().Where(_ => _.ProductId == productId).ToListAsync(ct);
+    }
+
     public async Task<bool> UpdateOrderStatusAsync(Guid orderId, OrderStatus status, CancellationToken ct)
     {
-        var now = DateTimeOffset.UtcNow;
-
         var numOfRow = await _inventoryDBContext.orders
             .Where(o => o.OrderId == orderId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(o => o.Status, status)
-                .SetProperty(o => o.UpdatedAt, now), ct);
+                .SetProperty(o => o.UpdatedAt, DateTimeOffset.UtcNow), ct);
 
         return numOfRow > 0;
     }
 
-    public async Task<bool> SaveChanges()
+    public async Task<bool> SaveChanges(CancellationToken ct = default)
     {
-        return await _inventoryDBContext.SaveChangesAsync() > 0;
+        return await _inventoryDBContext.SaveChangesAsync(ct) > 0;
+    }
+
+    public async Task<bool> ReserveOrderAsync(Guid orderId, CancellationToken ct)
+    {
+        using var tx = await _inventoryDBContext.Database.BeginTransactionAsync(ct);
+
+        var ids = await _inventoryDBContext.orderItems.Where(_ => _.OrderId == orderId).Select(_ => new { _.ProductId, _.Quantity }).ToListAsync(ct);
+
+        await _inventoryDBContext.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM orders where order_id={orderId} FOR UPDATE");
+        foreach (var item in ids)
+        {
+            var flag = await ReserveStockAsync(orderId, item.ProductId, item.Quantity, ct);
+            if (!flag) return false;
+        }
+
+        await tx.CommitAsync();
+        return true;
+    }
+
+    public async Task<IEnumerable<StockItem>> GetAllStockItemsAsync(CancellationToken ct=default)=>
+        await _inventoryDBContext.stockItems.ToListAsync(ct);
+
+    public async Task<IEnumerable<Order>> FiltiringOrder(Expression<Func<Order, bool>> expression, CancellationToken ct, int? pageNum, int? pageSize)
+    {
+        int PageNum = pageNum ?? 1; int PageSize = pageSize ?? 1;
+        return _inventoryDBContext.orders.Where(expression).Skip((PageNum - 1) * PageSize).Take(PageSize);
+    }
+    public async Task<IEnumerable<OrderItem>> FiltiringOrderItems(Expression<Func<OrderItem, bool>> expression, CancellationToken ct, int? pageNum, int? pageSize)
+    {
+        int PageNum = pageNum ?? 1; int PageSize = pageSize ?? 1;
+        return _inventoryDBContext.orderItems.Where(expression).Skip((PageNum - 1) * PageSize).Take(PageSize);
+    }
+    public async Task<IEnumerable<StockItem>> FiltiringStockItems(Expression<Func<StockItem, bool>> expression, CancellationToken ct, int? pageNum, int? pageSize)
+    {
+        int PageNum = pageNum ?? 1; int PageSize = pageSize ?? 1;
+        return _inventoryDBContext.stockItems.Where(expression).Skip((PageNum - 1) * PageSize).Take(PageSize);
+    }
+    public async Task<IEnumerable<StockReservation>> FiltiringStockReservations(Expression<Func<StockReservation, bool>> expression, CancellationToken ct, int? pageNum, int? pageSize)
+    {
+        int PageNum = pageNum ?? 1; int PageSize = pageSize ?? 1;
+        return _inventoryDBContext.stockReservations.Where(expression).Skip((PageNum - 1) * PageSize).Take(PageSize);
     }
 }
