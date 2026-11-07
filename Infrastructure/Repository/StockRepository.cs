@@ -15,9 +15,10 @@ public class StockRepository : IStockRepository
     readonly InventoryDBContext _inventoryDBContext;
     readonly IPublishEndpoint _publish;
 
-    public StockRepository(InventoryDBContext inventoryDBContext, CancellationToken ct = default)
+    public StockRepository(InventoryDBContext inventoryDBContext, CancellationToken ct = default, IPublishEndpoint publish = null)
     {
         _inventoryDBContext = inventoryDBContext;
+        _publish = publish;
     }
 
     public async Task<Order?> GetOrderAsync(Guid orderId, CancellationToken ct = default)=>
