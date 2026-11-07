@@ -15,7 +15,7 @@ public class StockRepository : IStockRepository
     readonly InventoryDBContext _inventoryDBContext;
     readonly IPublishEndpoint _publish;
 
-    public StockRepository(InventoryDBContext inventoryDBContext, CancellationToken ct = default, IPublishEndpoint publish = null)
+    public StockRepository(InventoryDBContext inventoryDBContext, IPublishEndpoint publish)
     {
         _inventoryDBContext = inventoryDBContext;
         _publish = publish;
