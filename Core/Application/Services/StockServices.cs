@@ -50,8 +50,10 @@ public sealed class StockService : IStockServices
             .Select(r => new { r.ProductId, r.Quantity })
             .ToList();
 
-        var reserved = await _repository.ReserveOrderAsync(orderId, ct);
-        if (!reserved) return false;
+        foreach (var item in values)
+        {
+            var newReserveStocks=_repository.ReserveStockAsync(orderId, item.ProductId, item.Quantity,ct);
+        }
 
         foreach (var value in values)
         {
