@@ -33,7 +33,7 @@ public class PaymentFailedConsumer : IConsumer<PaymentFailed>
                 .SetProperty(_=>_.ReleasedAt, DateTimeOffset.UtcNow)
                 .SetProperty(_=>_.UpdatedAt, DateTimeOffset.UtcNow));
 
-                await _dBContext.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM stock_items WHERE product_id={item.ProductId}");
+                await _dBContext.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM stock_items WHERE product_id={item.ProductId} FOR UPDATE");
                 await _dBContext.stockItems.Where(_=>_.ProductId==item.ProductId).ExecuteUpdateAsync( _=>_
                 .SetProperty(_=>_.QuantityOnHand, _=>_.QuantityOnHand+item.Quantity)
                 .SetProperty(_=>_.ReservedQuantity, _=>_.ReservedQuantity-item.Quantity)

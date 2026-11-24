@@ -39,9 +39,5 @@ public class PaymentCompletedConsumer : IConsumer<PaymentCompleted>
         {
             return;
         }
-        // var Reservation=await _repository.GetReservationAsync(_=>_.OrderId==message.OrderId);
-        // foreach (var item in Reservation)
-        //     await _repository.FulfillReservationAsync(item.ReservationId);
-        // await _repository.UpdateOrderStatusAsync(message.OrderId, OrderStatus.Failed);
     }
 }
